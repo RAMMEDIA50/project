@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Five Millionaires</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+body{
+background: linear-gradient(135deg,#141e30,#243b55);
+color:white;
+font-family:Segoe UI;
+}
+
+.card-box{
+background: rgba(255,255,255,0.08);
+backdrop-filter: blur(10px);
+padding:15px;
+border-radius:15px;
+margin-bottom:15px;
+}
+
+.member{
+display:flex;
+align-items:center;
+margin-bottom:10px;
+}
+
+.avatar{
+width:40px;
+height:40px;
+border-radius:50%;
+background:linear-gradient(45deg,#00c6ff,#0072ff);
+display:flex;
+align-items:center;
+justify-content:center;
+font-weight:bold;
+margin-right:10px;
+}
+
+.amount{
+margin-left:auto;
+background:rgba(0,0,0,0.4);
+padding:5px 10px;
+border-radius:10px;
+}
+
+.table td{
+color:white;
+}
+</style>
+
+</head>
+
+<body>
+
+<script>
+if(localStorage.getItem("auth")!=="true"){
+window.location.href="/";
+}
+</script>
+
+<div class="container mt-3">
+
+<div class="d-flex justify-content-between">
+<h3>💎 Five Millionaires</h3>
+<button class="btn btn-danger" onclick="logout()">Logout</button>
+</div>
+
+<!-- DASHBOARD -->
+<div class="row text-center mt-3">
+<div class="col-md-3"><div class="card-box"><h6>Total Saved</h6><h4 id="total">0</h4></div></div>
+<div class="col-md-3"><div class="card-box"><h6>This Month</h6><h4 id="month">0</h4></div></div>
+<div class="col-md-3"><div class="card-box"><h6>Weeks</h6><h4 id="weeks">0</h4></div></div>
+<div class="col-md-3"><div class="card-box"><h6>Top Member</h6><h4 id="top">-</h4></div></div>
+</div>
+
+<!-- WEEK TIMER -->
+<div class="card-box text-center mt-3">
+<h5>Week Progress</h5>
+<h4 id="weekNumber"></h4>
+<h5 id="timer"></h5>
+</div>
+
+<!-- ADMIN PANEL -->
+<div class="card-box mt-3" id="adminPanel">
+<h5>Admin Panel</h5>
+
+<input id="memberName" class="form-control mb-2" placeholder="New member name">
+<button class="btn btn-success mb-2" onclick="addMember()">Add Member</button>
+
+<button class="btn btn-primary" onclick="addRow()">Add Contribution Row</button>
+</div>
+
+<!-- MEMBERS -->
+<div class="card-box">
+<h5>Members</h5>
+<div id="membersUI"></div>
+</div>
+
+<!-- ADD FINE -->
+<div class="card-box">
+<h5>Add Fine</h5>
+<select id="fineMember" class="form-control mb-2"></select>
+<input id="fineAmount" class="form-control mb-2" placeholder="Amount">
+<input id="fineReason" class="form-control mb-2" placeholder="Reason">
+<button class="btn btn-warning" onclick="addFine()">Add Fine</button>
+</div>
+
+<!-- DOWNLOAD REPORT -->
+<div class="card-box">
+<h5>Download Monthly Report</h5>
+<input id="reportMonth" class="form-control mb-2" placeholder="e.g January">
+<button class="btn btn-info" onclick="downloadReport()">Download</button>
+</div>
+
+<!-- TABLE -->
+<div class="card-box">
+<h5>Contributions</h5>
+
+<table class="table table-bordered text-center">
+<thead>
+<tr id="tableHead"></tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+
+</div>
+
+</div>
+
+<script>
+
+if(localStorage.getItem("role")!=="admin"){
+document.getElementById("adminPanel").style.display="none";
+}
+
+/* LOGOUT */
+function logout(){
+localStorage.clear();
+window.location.href="/";
+}
+
+let members=[];
+let contributions=[];
+
+/* LOAD MEMBERS */
+async function loadMembers(){
+let res=await fetch("/members");
+members=await res.json();
+
+buildTable();
+renderMembers();
+fillFineDropdown();
+}
+
+/* LOAD CONTRIBUTIONS */
+async function loadContributions(){
+let res=await fetch("/contributions");
+contributions=await res.json();
+
+renderTable();
+updateDashboard();
+}
+
+/* ADD MEMBER */
+async function addMember(){
+let name=document.getElementById("memberName").value;
+
+await fetch("/add-member",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body: JSON.stringify({name})
+});
+
+loadMembers();
+}
+
+/* DELETE MEMBER */
+async function deleteMember(id){
+await fetch(`/delete-member/${id}`,{method:"DELETE"});
+loadMembers();
+}
+
+/* BUILD TABLE */
+function buildTable(){
+let head="<th>Month</th><th>Week</th>";
+members.forEach(m=> head+=`<th>${m[1]}</th>`);
+document.getElementById("tableHead").innerHTML=head;
+}
+
+/* ADD ROW */
+function addRow(){
+let row=document.createElement("tr");
+
+row.innerHTML=`
+<td contenteditable>January</td>
+<td contenteditable>1</td>
+${members.map(m=>`<td contenteditable data-id="${m[0]}">0</td>`).join("")}
+`;
+
+row.onblur=()=>saveRow(row);
+
+document.getElementById("tableBody").appendChild(row);
+}
+
+/* SAVE ROW */
+async function saveRow(row){
+let month=row.children[0].innerText;
+let week=row.children[1].innerText;
+
+for(let i=2;i<row.children.length;i++){
+let amount=parseFloat(row.children[i].innerText)||0;
+let member_id=row.children[i].dataset.id;
+
+await fetch("/add-contribution",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body: JSON.stringify({member_id,amount,week,month})
+});
+}
+
+loadContributions();
+}
+
+/* RENDER TABLE */
+function renderTable(){
+let body="";
+contributions.forEach(c=>{
+body+=`
+<tr>
+<td>${c[4]}</td>
+<td>${c[3]}</td>
+<td colspan="${members.length}">${c[1]} : ${c[2]}</td>
+</tr>`;
+});
+document.getElementById("tableBody").innerHTML=body;
+}
+
+/* DASHBOARD */
+function updateDashboard(){
+let total=0;
+let monthTotal=0;
+let sums={};
+
+members.forEach(m=> sums[m[1]]=0);
+
+contributions.forEach(c=>{
+let name=c[1];
+let amount=c[2];
+let month=c[4];
+
+total+=amount;
+sums[name]+=amount;
+
+if(month.toLowerCase()===currentMonth()){
+monthTotal+=amount;
+}
+});
+
+document.getElementById("total").innerText=total;
+document.getElementById("month").innerText=monthTotal;
+document.getElementById("weeks").innerText=new Set(contributions.map(c=>c[3])).size;
+
+let top=Object.entries(sums).sort((a,b)=>b[1]-a[1])[0];
+document.getElementById("top").innerText=top?top[0]:"-";
+
+renderMembers(sums);
+}
+
+/* MEMBERS UI */
+function renderMembers(sums={}){
+let html="";
+members.forEach(m=>{
+let name=m[1];
+let amount=sums[name]||0;
+
+html+=`
+<div class="member">
+<div class="avatar">${name[0]}</div>
+<div>${name}</div>
+<div class="amount">${amount}</div>
+<button class="btn btn-sm btn-danger ms-2" onclick="deleteMember(${m[0]})">X</button>
+</div>`;
+});
+
+document.getElementById("membersUI").innerHTML=html;
+}
+
+/* FINE */
+async function addFine(){
+await fetch("/add-fine",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body: JSON.stringify({
+member_id:document.getElementById("fineMember").value,
+amount:document.getElementById("fineAmount").value,
+reason:document.getElementById("fineReason").value
+})
+});
+alert("Fine added");
+}
+
+/* FINE DROPDOWN */
+function fillFineDropdown(){
+let select=document.getElementById("fineMember");
+select.innerHTML="";
+members.forEach(m=>{
+select.innerHTML+=`<option value="${m[0]}">${m[1]}</option>`;
+});
+}
+
+/* REPORT */
+function downloadReport(){
+let m=document.getElementById("reportMonth").value;
+window.open(`/download-report/${m}`);
+}
+
+/* WEEK TIMER */
+function updateTimer(){
+let start=new Date("2026-01-01");
+let now=new Date();
+
+let diff=Math.floor((now-start)/(1000*60*60*24));
+let week=Math.floor(diff/7)+1;
+
+document.getElementById("weekNumber").innerText="Week "+week;
+
+let end=new Date(start);
+end.setDate(start.getDate()+week*7);
+
+let remain=end-now;
+
+let days=Math.floor(remain/(1000*60*60*24));
+let hours=Math.floor((remain/(1000*60*60))%24);
+
+document.getElementById("timer").innerText=
+days+" days "+hours+" hrs remaining";
+}
+
+setInterval(updateTimer,1000);
+updateTimer();
+
+/* MONTH */
+function currentMonth(){
+return new Date().toLocaleString('default',{month:'long'}).toLowerCase();
+}
+
+/* INIT */
+loadMembers();
+loadContributions();
+
+</script>
+
+</body>
+</html>
